@@ -1,0 +1,33 @@
+# Web
+fastapi==0.115.0
+uvicorn[standard]==0.30.6
+python-multipart==0.0.9
+
+# ORM & DB
+sqlmodel==0.0.22
+alembic==1.13.2
+
+# Auth
+python-jose[cryptography]==3.3.0
+passlib[bcrypt]==1.7.4
+bcrypt==4.2.0
+
+# Encryption
+pycryptodome==3.20.0
+
+# Task Queue
+celery[redis]==5.4.0
+flower==2.0.1
+redis==5.0.8
+
+# File Parsing
+pandas==2.2.2
+openpyxl==3.1.5
+
+# Email
+pydantic[email]==2.9.2
+pydantic-settings==2.5.2
+
+# Utils
+python-dotenv==1.0.1
+aiofiles==24.1.0
