@@ -1,9 +1,14 @@
 import { createApp } from 'vue'
 import { createPinia } from 'pinia'
-import ElementPlus from 'element-plus'
-import 'element-plus/dist/index.css'
-import zhCn from 'element-plus/dist/locale/zh-cn.mjs'
-import * as ElementPlusIconsVue from '@element-plus/icons-vue'
+import {
+  Document,
+  Odometer,
+  Plus,
+  Promotion,
+  Setting,
+  Upload,
+  User,
+} from '@element-plus/icons-vue'
 import App from './App.vue'
 import router from './router'
 
@@ -12,9 +17,16 @@ const pinia = createPinia()
 
 app.use(pinia)
 app.use(router)
-app.use(ElementPlus, { locale: zhCn })
 
-for (const [key, component] of Object.entries(ElementPlusIconsVue)) {
+for (const [key, component] of Object.entries({
+  Document,
+  Odometer,
+  Plus,
+  Promotion,
+  Setting,
+  Upload,
+  User,
+})) {
   app.component(key, component)
 }
 

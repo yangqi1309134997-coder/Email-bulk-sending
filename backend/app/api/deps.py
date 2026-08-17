@@ -1,7 +1,7 @@
 from typing import Optional
 from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
-from sqlmodel import Session, select
+from sqlmodel import Session
 from ..database import get_session
 from ..models.user import User
 from ..utils.security import decode_token

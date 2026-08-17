@@ -15,8 +15,12 @@
             <el-tag :type="row.role === 'admin' ? 'danger' : 'info'">{{ row.role === 'admin' ? '管理员' : '操作员' }}</el-tag>
           </template>
         </el-table-column>
-        <el-table-column prop="created_at" label="创建时间" />
-        <el-table-column prop="last_login" label="最后登录" />
+        <el-table-column prop="created_at" label="创建时间">
+          <template #default="{ row }">{{ formatApiDateTime(row.created_at) }}</template>
+        </el-table-column>
+        <el-table-column prop="last_login" label="最后登录">
+          <template #default="{ row }">{{ formatApiDateTime(row.last_login) }}</template>
+        </el-table-column>
         <el-table-column label="操作" width="200">
           <template #default="{ row }">
             <el-button size="small" @click="changeRole(row)">{{ row.role === 'admin' ? '降为操作员' : '升为管理员' }}</el-button>
@@ -56,6 +60,7 @@
 import { ref, reactive, onMounted } from 'vue'
 import api from '../api'
 import { ElMessage, ElMessageBox } from 'element-plus'
+import { formatApiDateTime } from '../utils/time'
 
 const users = ref([])
 const dialogVisible = ref(false)
@@ -112,7 +117,9 @@ const deleteUser = async (id) => {
     await api.delete(`/api/users/${id}`)
     ElMessage.success('删除成功')
     loadUsers()
-  } catch {}
+  } catch (err) {
+    ElMessage.error('删除用户失败：' + (err.response?.data?.detail || '未知错误'))
+  }
 }
 
 onMounted(() => {

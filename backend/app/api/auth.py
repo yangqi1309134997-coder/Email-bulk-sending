@@ -1,9 +1,11 @@
 from datetime import datetime
-from typing import Optional
-from fastapi import APIRouter, Depends, HTTPException, status
-from pydantic import BaseModel, EmailStr
+from typing import Literal, Optional
+from fastapi import APIRouter, Depends, HTTPException, Request, status
+from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator
+from sqlalchemy import func
+from sqlalchemy.exc import IntegrityError
 from sqlmodel import Session, select
-from .deps import get_current_user, get_optional_user, require_admin
+from .deps import get_current_user
 from ..database import get_session
 from ..models.user import User
 from ..utils.security import (
@@ -12,21 +14,33 @@ from ..utils.security import (
     create_access_token,
     create_refresh_token,
     decode_token,
+    check_configured_rate_limit,
 )
+from ..utils.time import utcnow
+from ..config import settings
 
 router = APIRouter(prefix="/api/auth", tags=["认证"])
 
 
 class LoginRequest(BaseModel):
-    username: str
-    password: str
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
+
+    username: str = Field(min_length=1, max_length=64, pattern=r"^[A-Za-z0-9_.@-]+$")
+    password: str = Field(min_length=1, max_length=256)
 
 
 class RegisterRequest(BaseModel):
-    username: str
-    password: str
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
+
+    username: str = Field(min_length=3, max_length=64, pattern=r"^[A-Za-z0-9_.-]+$")
+    password: str = Field(min_length=10, max_length=128)
     email: EmailStr
-    role: str = "operator"
+    role: Literal["operator"] = "operator"
+
+    @field_validator("email")
+    @classmethod
+    def normalize_email(cls, value: EmailStr) -> str:
+        return str(value).lower()
 
 
 class TokenResponse(BaseModel):
@@ -36,6 +50,8 @@ class TokenResponse(BaseModel):
 
 
 class UserResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
     id: int
     username: str
     email: str
@@ -43,24 +59,30 @@ class UserResponse(BaseModel):
     created_at: datetime
     last_login: Optional[datetime] = None
 
-    class Config:
-        from_attributes = True
-
-
 class RefreshRequest(BaseModel):
-    refresh_token: str
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
+
+    refresh_token: str = Field(min_length=32, max_length=4096)
 
 
 @router.post("/login", response_model=TokenResponse)
-def login(request: LoginRequest, session: Session = Depends(get_session)):
-    user = session.exec(select(User).where(User.username == request.username)).first()
-    if not user or not verify_password(request.password, user.password_hash):
+def login(payload: LoginRequest, request: Request, session: Session = Depends(get_session)):
+    client_host = request.client.host if request.client else "unknown"
+    if not check_configured_rate_limit(f"login:{client_host}", settings.LOGIN_RATE_LIMIT):
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail="Too many login attempts",
+            headers={"Retry-After": "60"},
+        )
+
+    user = session.exec(select(User).where(User.username == payload.username)).first()
+    if not user or not verify_password(payload.password, user.password_hash):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Incorrect username or password",
         )
 
-    user.last_login = datetime.utcnow()
+    user.last_login = utcnow()
     session.add(user)
     session.commit()
 
@@ -71,22 +93,47 @@ def login(request: LoginRequest, session: Session = Depends(get_session)):
 
 
 @router.post("/register", response_model=UserResponse)
-def register(request: RegisterRequest, session: Session = Depends(get_session)):
-    existing = session.exec(select(User).where(User.username == request.username)).first()
+def register(payload: RegisterRequest, request: Request, session: Session = Depends(get_session)):
+    if not settings.ALLOW_REGISTER:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Registration is disabled, please contact the administrator",
+        )
+    client_host = request.client.host if request.client else "unknown"
+    if not check_configured_rate_limit(f"register:{client_host}", settings.REGISTER_RATE_LIMIT):
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail="Too many registration attempts",
+            headers={"Retry-After": "3600"},
+        )
+
+    existing = session.exec(
+        select(User).where(
+            (func.lower(User.username) == request.username.lower())
+            | (func.lower(User.email) == str(request.email).lower())
+        )
+    ).first()
     if existing:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Username already registered",
+            detail="Username or email already registered",
         )
 
     user = User(
         username=request.username,
         password_hash=get_password_hash(request.password),
-        email=request.email,
-        role=request.role,
+        email=str(request.email).lower(),
+        role="operator",
     )
-    session.add(user)
-    session.commit()
+    try:
+        session.add(user)
+        session.commit()
+    except IntegrityError:
+        session.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Username or email already registered",
+        ) from None
     session.refresh(user)
 
     return user

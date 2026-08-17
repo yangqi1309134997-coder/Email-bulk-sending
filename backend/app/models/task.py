@@ -1,6 +1,7 @@
 from sqlmodel import SQLModel, Field
 from datetime import datetime
 from typing import Optional
+from ..utils.time import utcnow
 
 
 class Task(SQLModel, table=True):
@@ -26,5 +27,10 @@ class Task(SQLModel, table=True):
     delay_max: int = 15
     proxies: str = "[]"  # JSON array
     load_balance_strategy: str = "round_robin"  # round_robin/weighted/smart
-    created_at: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(default_factory=utcnow)
     completed_at: Optional[datetime] = None
+    next_run_at: Optional[datetime] = Field(default=None, index=True)
+    pause_reason: str = ""
+    lease_owner: str = Field(default="", index=True)
+    lease_expires_at: Optional[datetime] = Field(default=None, index=True)
+    last_heartbeat_at: Optional[datetime] = None

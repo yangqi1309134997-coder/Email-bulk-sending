@@ -1,6 +1,7 @@
 from sqlmodel import SQLModel, Field
 from datetime import datetime
 from typing import Optional
+from ..utils.time import utcnow
 
 
 class Template(SQLModel, table=True):
@@ -12,5 +13,5 @@ class Template(SQLModel, table=True):
     subject: str = ""
     body: str = ""
     variables: str = "[]"  # JSON array of variable names
-    created_at: datetime = Field(default_factory=datetime.utcnow)
-    updated_at: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(default_factory=utcnow)
+    updated_at: datetime = Field(default_factory=utcnow)

@@ -35,6 +35,9 @@
       :style="{ minHeight: minHeight }"
       @input="handleInput"
       @blur="handleInput"
+      @paste.prevent="handlePaste"
+      @dragover.prevent
+      @drop.prevent="handleDrop"
     />
   </div>
 </template>
@@ -42,6 +45,7 @@
 <script setup>
 import { ref, onMounted, watch } from 'vue'
 import { ElMessageBox } from 'element-plus'
+import DOMPurify from 'dompurify'
 
 const props = defineProps({
   modelValue: { type: String, default: '' },
@@ -53,6 +57,11 @@ const emit = defineEmits(['update:modelValue'])
 const editorRef = ref(null)
 const fontSize = ref(14)
 const fontColor = ref('#333333')
+
+const sanitizeHtml = (value) => DOMPurify.sanitize(String(value || ''), {
+  USE_PROFILES: { html: true },
+  ALLOWED_URI_REGEXP: /^(?:(?:https?|mailto):|[#/])/i,
+})
 
 const execCmd = (cmd, value = null) => {
   document.execCommand(cmd, false, value)
@@ -83,7 +92,9 @@ const insertLink = async () => {
     })
     document.execCommand('createLink', false, value)
     handleInput()
-  } catch {}
+  } catch (e) {
+    if (e !== 'cancel') ElMessage.error('插入链接失败')
+  }
 }
 
 const insertImage = async () => {
@@ -94,7 +105,9 @@ const insertImage = async () => {
     })
     document.execCommand('insertImage', false, value)
     handleInput()
-  } catch {}
+  } catch (e) {
+    if (e !== 'cancel') ElMessage.error('插入链接失败')
+  }
 }
 
 const insertVariable = (varName) => {
@@ -108,26 +121,76 @@ const insertVariable = (varName) => {
     selection.removeAllRanges()
     selection.addRange(range)
   } else {
-    editorRef.value.innerHTML += varName
+    editorRef.value?.append(document.createTextNode(varName))
   }
   handleInput()
 }
 
 const handleInput = () => {
   if (editorRef.value) {
-    emit('update:modelValue', editorRef.value.innerHTML)
+    const sanitized = sanitizeHtml(editorRef.value.innerHTML)
+    if (editorRef.value.innerHTML !== sanitized) {
+      editorRef.value.innerHTML = sanitized
+    }
+    emit('update:modelValue', sanitized)
   }
 }
 
+const insertTransferredContent = (transfer) => {
+  const sourceHtml = transfer?.getData('text/html') || ''
+  if (sourceHtml) {
+    document.execCommand('insertHTML', false, sanitizeHtml(sourceHtml))
+  } else {
+    document.execCommand('insertText', false, transfer?.getData('text/plain') || '')
+  }
+  handleInput()
+}
+
+const handlePaste = (event) => {
+  insertTransferredContent(event.clipboardData)
+}
+
+const moveCaretToPoint = (x, y) => {
+  const selection = window.getSelection()
+  if (!selection) return
+
+  let range = null
+  if (document.caretRangeFromPoint) {
+    range = document.caretRangeFromPoint(x, y)
+  } else if (document.caretPositionFromPoint) {
+    const position = document.caretPositionFromPoint(x, y)
+    if (position) {
+      range = document.createRange()
+      range.setStart(position.offsetNode, position.offset)
+      range.collapse(true)
+    }
+  }
+  if (range && editorRef.value?.contains(range.startContainer)) {
+    selection.removeAllRanges()
+    selection.addRange(range)
+  }
+}
+
+const handleDrop = (event) => {
+  editorRef.value?.focus()
+  moveCaretToPoint(event.clientX, event.clientY)
+  insertTransferredContent(event.dataTransfer)
+}
+
 watch(() => props.modelValue, (newVal) => {
-  if (editorRef.value && editorRef.value.innerHTML !== newVal) {
-    editorRef.value.innerHTML = newVal
+  const sanitized = sanitizeHtml(newVal)
+  if (editorRef.value && editorRef.value.innerHTML !== sanitized) {
+    editorRef.value.innerHTML = sanitized
   }
 })
 
 onMounted(() => {
   if (editorRef.value && props.modelValue) {
-    editorRef.value.innerHTML = props.modelValue
+    const sanitized = sanitizeHtml(props.modelValue)
+    editorRef.value.innerHTML = sanitized
+    if (sanitized !== props.modelValue) {
+      emit('update:modelValue', sanitized)
+    }
   }
 })
 </script>

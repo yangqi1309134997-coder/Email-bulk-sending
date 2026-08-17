@@ -1,68 +1,158 @@
 services:
   redis:
     image: redis:7-alpine
-    ports:
-      - "6379:6379"
+    command: redis-server --appendonly yes
     volumes:
       - redis_data:/data
     restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: email_bulk
+      POSTGRES_USER: email_bulk
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in the project .env}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U email_bulk -d email_bulk"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
 
   api:
     build:
       context: ./backend
       dockerfile: Dockerfile
     ports:
-      - "8000:8000"
+      - "127.0.0.1:8000:8000"
     env_file:
-      - ./backend/.env
+      - ./.env
+    environment:
+      APP_ENV: production
+      DEBUG: "false"
+      ENABLE_DOCS: "false"
+      RATE_LIMIT_BACKEND: redis
+      DATABASE_URL: postgresql+psycopg://email_bulk:${POSTGRES_PASSWORD}@postgres:5432/email_bulk
+      REDIS_URL: redis://redis:6379/0
+      CELERY_BROKER_URL: redis://redis:6379/0
+      CELERY_RESULT_BACKEND: redis://redis:6379/1
     volumes:
-      - ./backend/app:/app/app
       - ./backend/uploads:/app/uploads
-      - db_data:/app/data
     depends_on:
-      - redis
+      redis:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
     restart: unless-stopped
-    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+    init: true
+    stop_grace_period: 45s
+    command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "1", "--proxy-headers", "--forwarded-allow-ips=*"]
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health/ready', timeout=2)"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
 
   worker:
     build:
       context: ./backend
       dockerfile: Dockerfile
     env_file:
-      - ./backend/.env
+      - ./.env
+    environment:
+      APP_ENV: production
+      DEBUG: "false"
+      RATE_LIMIT_BACKEND: redis
+      DATABASE_URL: postgresql+psycopg://email_bulk:${POSTGRES_PASSWORD}@postgres:5432/email_bulk
+      REDIS_URL: redis://redis:6379/0
+      CELERY_BROKER_URL: redis://redis:6379/0
+      CELERY_RESULT_BACKEND: redis://redis:6379/1
     volumes:
-      - ./backend/app:/app/app
       - ./backend/uploads:/app/uploads
-      - db_data:/app/data
     depends_on:
-      - redis
+      redis:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+      api:
+        condition: service_healthy
     restart: unless-stopped
+    init: true
+    stop_grace_period: 45s
     command: celery -A app.tasks.celery_app worker --loglevel=info --concurrency=4
+
+  beat:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    env_file:
+      - ./.env
+    environment:
+      APP_ENV: production
+      DEBUG: "false"
+      RATE_LIMIT_BACKEND: redis
+      DATABASE_URL: postgresql+psycopg://email_bulk:${POSTGRES_PASSWORD}@postgres:5432/email_bulk
+      REDIS_URL: redis://redis:6379/0
+      CELERY_BROKER_URL: redis://redis:6379/0
+      CELERY_RESULT_BACKEND: redis://redis:6379/1
+    volumes:
+      - ./backend/uploads:/app/uploads
+      - celerybeat_data:/app/celerybeat
+    depends_on:
+      redis:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+      api:
+        condition: service_healthy
+    restart: unless-stopped
+    init: true
+    command: celery -A app.tasks.celery_app beat --loglevel=info --schedule=/app/celerybeat/celerybeat-schedule
 
   flower:
     build:
       context: ./backend
       dockerfile: Dockerfile
     env_file:
-      - ./backend/.env
+      - ./.env
+    environment:
+      APP_ENV: production
+      DEBUG: "false"
+      RATE_LIMIT_BACKEND: redis
+      DATABASE_URL: postgresql+psycopg://email_bulk:${POSTGRES_PASSWORD}@postgres:5432/email_bulk
+      REDIS_URL: redis://redis:6379/0
+      CELERY_BROKER_URL: redis://redis:6379/0
+      CELERY_RESULT_BACKEND: redis://redis:6379/1
     ports:
       - "5555:5555"
     depends_on:
-      - redis
+      redis:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
     restart: unless-stopped
     command: celery -A app.tasks.celery_app flower --port=5555
 
   nginx:
-    image: nginx:alpine
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
     ports:
       - "80:80"
-    volumes:
-      - ./nginx/nginx.conf:/etc/nginx/nginx.conf
-      - ./frontend/dist:/usr/share/nginx/html
     depends_on:
-      - api
+      api:
+        condition: service_healthy
     restart: unless-stopped
 
 volumes:
   redis_data:
-  db_data:
+  postgres_data:
+  celerybeat_data:

@@ -4,7 +4,6 @@
 
 <script setup>
 import { ref, onMounted, onUnmounted, watch } from 'vue'
-import * as echarts from 'echarts'
 
 const props = defineProps({
   option: { type: Object, required: true },
@@ -14,9 +13,29 @@ const props = defineProps({
 
 const chartRef = ref(null)
 let chartInstance = null
+let unmounted = false
 
-const initChart = () => {
-  if (chartRef.value) {
+const loadEcharts = async () => {
+  const [echarts, charts, components, renderers] = await Promise.all([
+    import('echarts/core'),
+    import('echarts/charts'),
+    import('echarts/components'),
+    import('echarts/renderers'),
+  ])
+  echarts.use([
+    charts.LineChart,
+    charts.PieChart,
+    components.GridComponent,
+    components.LegendComponent,
+    components.TooltipComponent,
+    renderers.CanvasRenderer,
+  ])
+  return echarts
+}
+
+const initChart = async () => {
+  const echarts = await loadEcharts()
+  if (!unmounted && chartRef.value) {
     chartInstance = echarts.init(chartRef.value)
     chartInstance.setOption(props.option)
   }
@@ -31,12 +50,15 @@ watch(() => props.option, (newOption) => {
 }, { deep: true })
 
 onMounted(() => {
-  initChart()
+  unmounted = false
+  void initChart()
   window.addEventListener('resize', handleResize)
 })
 
 onUnmounted(() => {
+  unmounted = true
   window.removeEventListener('resize', handleResize)
   chartInstance?.dispose()
+  chartInstance = null
 })
 </script>

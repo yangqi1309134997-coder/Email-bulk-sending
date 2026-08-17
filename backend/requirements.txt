@@ -1,18 +1,22 @@
 # Web
 fastapi==0.115.0
 uvicorn[standard]==0.30.6
-python-multipart==0.0.9
+python-multipart==0.0.32
 
 # ORM & DB
 sqlmodel==0.0.22
 alembic==1.13.2
+psycopg[binary]==3.2.9
 
 # Auth
-python-jose[cryptography]==3.3.0
+python-jose[cryptography]==3.5.0
 passlib[bcrypt]==1.7.4
 bcrypt==4.2.0
 
 # Encryption
+# Direct dependency for AES-GCM writes and legacy CBC reads.
+cryptography==49.0.0
+# Retained for compatibility tests that generate historical v2 fixtures.
 pycryptodome==3.20.0
 
 # Task Queue
@@ -27,7 +31,8 @@ openpyxl==3.1.5
 # Email
 pydantic[email]==2.9.2
 pydantic-settings==2.5.2
+PySocks==1.7.1
 
 # Utils
-python-dotenv==1.0.1
+python-dotenv==1.2.2
 aiofiles==24.1.0

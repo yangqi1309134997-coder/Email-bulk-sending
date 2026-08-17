@@ -10,9 +10,14 @@
       <el-table :data="templates" stripe>
         <el-table-column prop="name" label="模板名称" />
         <el-table-column prop="subject" label="邮件主题" />
-        <el-table-column prop="updated_at" label="更新时间" />
-        <el-table-column label="操作" width="250">
+        <el-table-column prop="updated_at" label="更新时间">
           <template #default="{ row }">
+            {{ formatTime(row.updated_at) }}
+          </template>
+        </el-table-column>
+        <el-table-column label="操作" width="300">
+          <template #default="{ row }">
+            <el-button size="small" type="primary" @click="useTemplate(row)">使用</el-button>
             <el-button size="small" @click="editTemplate(row)">编辑</el-button>
             <el-button size="small" @click="duplicateTemplate(row.id)">复制</el-button>
             <el-button size="small" type="danger" @click="deleteTemplate(row.id)">删除</el-button>
@@ -21,16 +26,16 @@
       </el-table>
     </el-card>
 
-    <el-dialog v-model="dialogVisible" :title="isEdit ? '编辑模板' : '创建模板'" width="600px">
+    <el-dialog v-model="dialogVisible" :title="isEdit ? '编辑模板' : '创建模板'" width="700px">
       <el-form :model="templateForm" label-width="80px">
         <el-form-item label="模板名称">
-          <el-input v-model="templateForm.name" />
+          <el-input v-model="templateForm.name" placeholder="请输入模板名称" />
         </el-form-item>
         <el-form-item label="邮件主题">
-          <el-input v-model="templateForm.subject" placeholder="支持 {name} 变量" />
+          <el-input v-model="templateForm.subject" placeholder="支持 {name}, {email} 变量" />
         </el-form-item>
         <el-form-item label="邮件正文">
-          <textarea v-model="templateForm.body" rows="10" style="width: 100%; padding: 10px" placeholder="支持 HTML" />
+          <EmailEditor v-model="templateForm.body" />
         </el-form-item>
       </el-form>
       <template #footer>
@@ -43,9 +48,13 @@
 
 <script setup>
 import { ref, reactive, onMounted } from 'vue'
+import { useRouter } from 'vue-router'
 import api from '../api'
 import { ElMessage, ElMessageBox } from 'element-plus'
+import EmailEditor from '../components/EmailEditor.vue'
+import { formatApiDateTime } from '../utils/time'
 
+const router = useRouter()
 const templates = ref([])
 const dialogVisible = ref(false)
 const isEdit = ref(false)
@@ -56,6 +65,8 @@ const templateForm = reactive({
   subject: '',
   body: '',
 })
+
+const formatTime = formatApiDateTime
 
 const loadTemplates = async () => {
   try {
@@ -85,6 +96,10 @@ const editTemplate = (row) => {
 }
 
 const saveTemplate = async () => {
+  if (!templateForm.name.trim()) {
+    ElMessage.warning('请输入模板名称')
+    return
+  }
   try {
     if (isEdit.value) {
       await api.put(`/api/templates/${editId.value}`, templateForm)
@@ -98,6 +113,11 @@ const saveTemplate = async () => {
   } catch {
     ElMessage.error('保存模板失败')
   }
+}
+
+const useTemplate = (row) => {
+  // Keep potentially large/sensitive HTML out of browser history and URLs.
+  router.push({ path: '/send', query: { template_id: row.id } })
 }
 
 const duplicateTemplate = async (id) => {
@@ -116,7 +136,9 @@ const deleteTemplate = async (id) => {
     await api.delete(`/api/templates/${id}`)
     ElMessage.success('模板删除成功')
     loadTemplates()
-  } catch {}
+  } catch (err) {
+    ElMessage.error(err.response?.data?.detail || '删除模板失败')
+  }
 }
 
 onMounted(() => {

@@ -17,3 +17,7 @@ class SendLog(SQLModel, table=True):
     sent_at: Optional[datetime] = None
     opened_at: Optional[datetime] = None
     clicked_at: Optional[datetime] = None
+    attempt_count: int = 0
+    claimed_at: Optional[datetime] = Field(default=None, index=True)
+    next_attempt_at: Optional[datetime] = Field(default=None, index=True)
+    last_error_code: str = ""

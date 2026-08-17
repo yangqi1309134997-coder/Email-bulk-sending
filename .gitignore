@@ -1,8 +1,42 @@
+# Python
 __pycache__/
 *.pyc
+*.pyo
+.pytest_cache/
+.coverage
+coverage.json
+htmlcov/
+*.egg-info/
+
+# 环境与密钥（严禁提交！deploy.sh 会从 .env.example 生成）
 .env
+.env.local
+.env.*.local
+
+# 数据库与上传数据
 data/
+*.db
+*.sqlite3
+uploads/
+*.log
+logs/
+.pid
+*.pid
+
+# 前端
 node_modules/
 dist/
-uploads/
-*.db
+.browser-artifacts/
+browser-*.log
+
+# 工具
+.playwright-mcp/
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# 本地开发进程与临时产物
+.backend.pid
+.frontend.pid
+*.bak.*
